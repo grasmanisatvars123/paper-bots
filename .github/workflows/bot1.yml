@@ -1,0 +1,98 @@
+# Bot 1 value area on an Alpaca PAPER account (no real money). Public repository so GitHub Actions minutes are free.
+# Keys: repository secrets BOT1_ALPACA_API_KEY and BOT1_ALPACA_SECRET_KEY (one paper account per bot).
+# Without those secrets every run stops at once and does nothing.
+# Start times (UTC, US winter time; from 14 March 2027 move every cron one hour earlier):
+#   morning 13:40, 14:05, 14:20 (= 08:40-09:20 New York): watch 09:35-14:00 for the entry
+#   close   19:20, 19:45, 20:10 (= 14:20-15:10 New York): wait until 15:55 and close
+# GitHub often starts scheduled runs 45-75 minutes late, hence the early and repeated starts; "auto" does whatever is
+# due and skips what is already done.
+name: Bot 1 value area
+
+on:
+  schedule:
+    - cron: "40 13 * * 1-5"
+    - cron: "5 14 * * 1-5"
+    - cron: "20 14 * * 1-5"
+    - cron: "20 19 * * 1-5"
+    - cron: "45 19 * * 1-5"
+    - cron: "10 20 * * 1-5"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: bot1
+  cancel-in-progress: false
+
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    timeout-minutes: 350
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+
+      - name: Are the keys there?
+        id: pre
+        env:
+          KEY: ${{ secrets.BOT1_ALPACA_API_KEY }}
+        run: |
+          if [ -z "$KEY" ]; then echo "mode=none" >> "$GITHUB_OUTPUT"; echo "No keys yet: nothing to do."; else echo "mode=auto" >> "$GITHUB_OUTPUT"; fi
+
+      - uses: actions/setup-python@v5
+        if: steps.pre.outputs.mode == 'auto'
+        with:
+          python-version: "3.13"
+
+      - name: Install packages
+        if: steps.pre.outputs.mode == 'auto'
+        run: pip install numpy pandas truststore tzdata
+
+      - name: Run the bot
+        if: steps.pre.outputs.mode == 'auto'
+        working-directory: bots
+        env:
+          ALPACA_API_KEY: ${{ secrets.BOT1_ALPACA_API_KEY }}
+          ALPACA_SECRET_KEY: ${{ secrets.BOT1_ALPACA_SECRET_KEY }}
+          ALPACA_BASE_URL: https://paper-api.alpaca.markets
+          MSG_FILE: ${{ runner.temp }}/msg.txt
+        run: python bot1_value_area.py
+
+      - name: Queue the messages for the phone
+        if: always() && steps.pre.outputs.mode == 'auto'
+        env:
+          JOB_STATUS: ${{ job.status }}
+          MSG_FILE: ${{ runner.temp }}/msg.txt
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          RUN_ID: ${{ github.run_id }}
+        run: |
+          python - <<'EOF'
+          import datetime, os
+          lines = []
+          if os.path.exists(os.environ["MSG_FILE"]):
+              lines = [x for x in open(os.environ["MSG_FILE"], encoding="utf-8").read().splitlines() if x.strip()]
+          if os.environ["JOB_STATUS"] != "success":
+              lines.append("Bot 1 value area: šodien radās tehniska kļūda, bots varēja neizpildīt savu darbu. "
+                           "Tev nekas nav jādara, pasaki Claude, lai paskatās. " + os.environ["RUN_URL"])
+          stamp = datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H%M%S")
+          os.makedirs("outbox", exist_ok=True)
+          for n, text in enumerate(lines):
+              open(f"outbox/{stamp}-{os.environ['RUN_ID']}-bot1-{n}.txt", "w", encoding="utf-8").write(text)
+          EOF
+
+      - name: Save journal, state and messages
+        if: always() && steps.pre.outputs.mode == 'auto'
+        run: |
+          git config user.name "paper-bots"
+          git config user.email "paper-bots@users.noreply.github.com"
+          git add journal state outbox || true
+          git diff --cached --quiet && exit 0
+          git commit -m "Bot 1 value area: $(date -u +%F)"
+          for i in 1 2 3; do
+            if ! git pull --rebase; then git rebase --abort; git pull --rebase -X theirs || { git rebase --abort; sleep 5; continue; }; fi
+            git push && exit 0
+            sleep 5
+          done
+          exit 1
