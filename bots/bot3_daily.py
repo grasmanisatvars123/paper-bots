@@ -5,6 +5,11 @@ Rule (rules.b3_step, fixed before testing): each trading day at ~15:46 New York,
 market-on-close (Alpaca accepts them until 15:50), so fills are at the official 16:00 close. Long only, no stop
 (as in the original rules); position about 98 % of equity, never more.
 State (which rules are active) is kept in state/bot3/rules.json; missed days are replayed with daily closes.
+
+Since 2026-11-21 the bot runs in the SAME paper account as the Williams bot (the user's choice). Williams trades SPY
+and touches only SPY, so this bot trades VOO (a Vanguard S&P 500 fund that moves like SPY; signals still come from
+SPY data). If Williams still holds SPY at 15:46 and uses the buying power, the bot buys what fits at the close and
+the rest with a market order at 15:58:40, after Williams has closed.
 """
 import json, logging, os
 import numpy as np, pandas as pd
@@ -12,6 +17,8 @@ import common as cm, rules
 from alpaca import Alpaca, ApiError
 
 BOT, NAME, TITLE = "bot3", "Bots 3 (dienas atgriešanās)", "Bots 3 Dienas atgriešanās"
+TRADE = os.environ.get("BOT3_SYMBOL", "VOO")      # traded fund; SPY is left to the Williams bot in the same account
+FUND = f"{TRADE} (S&P 500 fonds, kustas tāpat kā SPY)"
 RULES_FILE = os.path.join(cm.ROOT, "state", BOT, "rules.json")
 LABELS = {"IBS": "IBS (slēgums dienas apakšā)", "RSI2": "RSI(2) zem 10", "D7": "zemākais slēgums 7 dienās"}
 
@@ -35,12 +42,12 @@ def replay(b, upto_n, st=None):
 
 def journal(s):
     st = s.get("rules_after") or {}
-    lines = ["## Lēmums", f"- Cena lēmuma brīdī: {s.get('price', 0):.2f}",
+    lines = ["## Lēmums", f"- SPY cena lēmuma brīdī: {s.get('price', 0):.2f}",
              f"- Aktīvie noteikumi pēc lēmuma: {', '.join(LABELS[k] for k in st) or 'neviens'}",
              f"- Pozīcija: {s.get('action', '')}"]
     out = ["---", "tags: [trade, paper-bot]", f"date: {s['day']}", "account: paper", f"bot: \"{TITLE}\"", "---",
-           f"# {s['day']} {TITLE}", "", "Noteikums: pērk SPY slēgumā pēc krituma (IBS, RSI(2)) un pārdod "
-           "pēc atgūšanās. Papīra konts, nav īsta nauda.", ""] + lines
+           f"# {s['day']} {TITLE}", "", f"Noteikums: pērk {TRADE} slēgumā pēc SPY krituma (IBS, RSI(2)) un pārdod "
+           "pēc atgūšanās. Papīra konts kopā ar Williams botu, nav īsta nauda.", ""] + lines
     out += ["", "## Piezīmes"] + ([f"- {x}" for x in s["notes"]] or ["- Nav."])
     return "\n".join(out) + "\n"
 
@@ -76,24 +83,38 @@ def auto(api):
         hi, lo = max(np.nanmax(H[:done]), price), min(np.nanmin(L[:done]), price)
         new = rules.b3_step(st, b.close.values, b.high.values, b.low.values, price, hi, lo)
         s.update(price=price, rules_before=st, rules_after=new)
-        pos = api.position(cm.SYMBOL)
+        pos = api.position(TRADE)
         qty = int(float(pos["qty"])) if pos else 0
-        eq = float(api.account()["equity"])
+        acct = api.account()
+        eq = float(acct["equity"])
+        tp = api.latest_price(TRADE)
+        bp = float(acct.get("buying_power") or 0)                 # Williams may be using it until 15:58
         s["equity"] = eq
-        want = int(0.98 * eq / price) if new else 0
+        want = int(0.98 * eq / tp) if new else 0
         if new and qty == 0:
-            o = api.market_order(cm.SYMBOL, "buy", want, f"B3-{day}-buy", tif="cls")
-            s["action"] = f"pērk {want} SPY slēgumā"; s["order_id"] = o["id"]
-            cm.message(f"{NAME}, {pd.Timestamp(day):%d.%m.} (mācību konts, nav īsta nauda): šodien PĒRK SPY slēgumā "
-                       f"(~{cm.usd(want * price)}), jo cena nokritās ({', '.join(LABELS[k] for k in new)}). "
+            now_qty = min(want, int(0.95 * bp / tp)) if bp > 0 else want
+            if now_qty > 0:
+                o = api.market_order(TRADE, "buy", now_qty, f"B3-{day}-buy", tif="cls"); s["order_id"] = o["id"]
+            s["action"] = f"pērk {want} {TRADE} slēgumā"
+            cm.message(f"{NAME}, {pd.Timestamp(day):%d.%m.} (mācību konts, nav īsta nauda): šodien PĒRK {FUND} "
+                       f"slēgumā (~{cm.usd(want * tp)}), jo cena nokritās ({', '.join(LABELS[k] for k in new)}). "
                        f"Tas turēs, līdz cena atgūsies (parasti 2–7 dienas).")
+            if want > now_qty:
+                cm.note(s, f"Williams vēl izmantoja pirktspēju: slēgumā {now_qty}, atlikušās {want - now_qty} pērk 15:58:40.")
+                cm.save(BOT, s, (TITLE, journal))
+                cm.sleep_until(cm.at(day, "15:58") + pd.Timedelta(seconds=40))
+                try:
+                    o2 = api.market_order(TRADE, "buy", want - now_qty, f"B3-{day}-rest")
+                    s["rest_order_id"] = o2["id"]
+                except ApiError as e:
+                    cm.note(s, f"Atlikušo daļu nopirkt neizdevās: {str(e)[:120]}")
         elif not new and qty > 0:
-            o = api.market_order(cm.SYMBOL, "sell", qty, f"B3-{day}-sell", tif="cls")
+            o = api.market_order(TRADE, "sell", qty, f"B3-{day}-sell", tif="cls")
             avg = float(pos["avg_entry_price"])
-            s["action"] = f"pārdod {qty} SPY slēgumā"; s["order_id"] = o["id"]
-            cm.message(f"{NAME}, {pd.Timestamp(day):%d.%m.} (mācību konts, nav īsta nauda): šodien PĀRDOD SPY slēgumā. "
-                       f"Pirka par {avg:.2f}, tagad ap {price:.2f}: aptuveni {'+' if price >= avg else '−'}{cm.usd((price - avg) * qty)}. "
-                       f"Kontā ap {cm.usd(eq)}.")
+            s["action"] = f"pārdod {qty} {TRADE} slēgumā"; s["order_id"] = o["id"]
+            cm.message(f"{NAME}, {pd.Timestamp(day):%d.%m.} (mācību konts, nav īsta nauda): šodien PĀRDOD {TRADE} slēgumā. "
+                       f"Pirka par {avg:.2f}, tagad ap {tp:.2f}: aptuveni {'+' if tp >= avg else '−'}{cm.usd((tp - avg) * qty)}. "
+                       f"Kontā kopā ar Williams ap {cm.usd(eq)}.")
         else:
             s["action"] = "tur pozīciju" if qty else "paliek bez pozīcijas"
         cm.note(s, f"Cena {price:.2f}; aktīvi: {', '.join(new) or 'neviens'}; {s['action']}.")
