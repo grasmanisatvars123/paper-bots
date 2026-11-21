@@ -6,7 +6,7 @@ Rule (rules.ict_levels / rules.ict_arm, fixed before testing):
   A sweep of the level, then a 1-minute close through the swing before the extreme with a fair-value gap in that leg
   arms a limit order at the FVG edge for 30 minutes; stop beyond the sweep extreme; target = the opposite level
   (AM: yesterday's PM high/low, PM: the lunch high/low); skipped if the target is less than 1R away.
-  One trade per window, out at 15:55. Sizing 1 % of equity at risk, at most 1.5 x equity.
+  One trade per window, out at 15:55. Sizing 10 % of equity at risk, at most 4 x equity.
 Runs: the morning run watches the AM window; the afternoon run watches the PM window and closes at 15:55.
 """
 import logging
@@ -69,7 +69,7 @@ def run_window(api, s, win):
             risk = (fvg - stop) * side
             if risk < 0.10 or (tgt - fvg) * side < risk:
                 cm.note(s, f"{win}: iestatījums atrasts, bet mērķis par tuvu (mazāk par 1R)."); continue
-            qty = cm.size(s["equity"], fvg, stop)
+            qty = cm.size(s["equity"], fvg, stop, buying_power=s.get("bp", 0))
             try:
                 o = api.bracket_order(cm.SYMBOL, "buy" if side == 1 else "sell", qty, round(tgt, 2), round(stop, 2),
                                       f"B2-{day}-{win}", limit=round(fvg, 2))
@@ -99,7 +99,9 @@ def auto(api):
             prev = cm.prev_session(api, day)
             a = cm.full_session(api, prev)
             s["prevH"], s["prevL"] = a[1].tolist(), a[2].tolist()
-            s["equity"] = float(api.account()["equity"])
+            acct = api.account()
+            s["equity"] = float(acct["equity"])
+            s["bp"] = float(acct.get("daytrading_buying_power") or 0)
         if not s["am_done"]:
             if cm.now() < cm.at(day, "10:55"):
                 cm.sleep_until(cm.at(day, "09:31"))

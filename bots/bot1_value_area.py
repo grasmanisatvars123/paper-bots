@@ -4,7 +4,7 @@ Rule (rules.b1_signal, fixed before testing): yesterday's volume profile gives t
 If today a 5-minute bar closes back inside the value area after price traded outside it, enter at the next bar:
 long after trading below VAL (stop = the day's low so far, target = VAH), short after trading above VAH
 (stop = the day's high so far, target = VAL). Signal bars until 14:00, one trade a day, out at 15:55.
-Sizing: 1 % of equity between entry and stop, position at most 1.5 x equity. Entry, stop and target are one
+Sizing: 10 % of equity between entry and stop, position at most 4 x equity. Entry, stop and target are one
 bracket order at Alpaca, so the broker watches stop and target.
 
 Runs ("python bot1_value_area.py auto"): the open run watches 09:35-14:00; a later run closes at 15:55.
@@ -42,7 +42,7 @@ def watch(api, s):
         if risk < 0.10 or (tgt - price) * side <= 0.02:
             cm.note(s, f"Signāls {'pirkšanai' if side == 1 else 'pārdošanai'}, bet cena {price:.2f} jau par tuvu stopam vai mērķim. Darījuma nav.")
             return
-        qty = cm.size(s["equity"], price, stop)
+        qty = cm.size(s["equity"], price, stop, buying_power=s.get("bp", 0))
         if qty < 1:
             cm.note(s, "Pārāk mazs konts šim riskam. Darījuma nav."); return
         try:
@@ -79,7 +79,9 @@ def auto(api):
                 prev = cm.prev_session(api, day)
                 a = cm.full_session(api, prev)
                 s["poc"], s["val"], s["vah"] = rules.value_area(a[1], a[2], a[4])
-                s["equity"] = float(api.account()["equity"])
+                acct = api.account()
+                s["equity"] = float(acct["equity"])
+                s["bp"] = float(acct.get("daytrading_buying_power") or 0)
                 cm.note(s, f"Vakardienas vērtības zona {s['val']:.2f} – {s['vah']:.2f} (POC {s['poc']:.2f}).")
                 cm.save(BOT, s, (TITLE, journal))
                 watch(api, s)

@@ -81,9 +81,12 @@ def full_session(api, day):
     return a
 
 
-def size(equity, entry, stop, risk_pct=0.01, max_notional=1.5):
+def size(equity, entry, stop, risk_pct=0.10, max_notional=4.0, buying_power=0.0):
+    """10 % of equity at risk (the user's choice on 2026-11-21, paper only), position at most 4 x equity and 95 % of
+    Alpaca's day-trading buying power. The 4 x cap decides the size on most days."""
     risk = abs(entry - stop)
-    return int(min(risk_pct * equity / max(risk, 1e-9), max_notional * equity / entry))
+    cap = min(max_notional * equity, 0.95 * buying_power) if buying_power > 0 else max_notional * equity
+    return int(min(risk_pct * equity / max(risk, 1e-9), cap / entry))
 
 
 # ---------------------------------------------------------------- state, journal, message
