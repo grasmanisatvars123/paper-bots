@@ -1,4 +1,4 @@
-"""Bot 3: daily mean reversion on SPY (IBS < 0.2, Connors RSI(2) < 10 above the 200-day average, Double 7s). PAPER ONLY.
+"""Bot 3: daily mean reversion on SPY (IBS < 0.2, Connors RSI(2) < 10 above the 200-day average). PAPER ONLY.
 
 Rule (rules.b3_step, fixed before testing): each trading day at ~15:46 New York, using the current price as
 "today's close": the bot is long SPY while ANY of the three rules is active, flat otherwise. Orders are
@@ -39,7 +39,7 @@ def journal(s):
              f"- Aktīvie noteikumi pēc lēmuma: {', '.join(LABELS[k] for k in st) or 'neviens'}",
              f"- Pozīcija: {s.get('action', '')}"]
     out = ["---", "tags: [trade, paper-bot]", f"date: {s['day']}", "account: paper", f"bot: \"{TITLE}\"", "---",
-           f"# {s['day']} {TITLE}", "", "Noteikums: pērk SPY slēgumā pēc krituma (IBS, RSI(2), Double 7s) un pārdod "
+           f"# {s['day']} {TITLE}", "", "Noteikums: pērk SPY slēgumā pēc krituma (IBS, RSI(2)) un pārdod "
            "pēc atgūšanās. Papīra konts, nav īsta nauda.", ""] + lines
     out += ["", "## Piezīmes"] + ([f"- {x}" for x in s["notes"]] or ["- Nav."])
     return "\n".join(out) + "\n"

@@ -88,7 +88,8 @@ def rsi2(closes):
 def b3_step(state, closes, highs, lows, price, hi_today, lo_today):
     """One daily decision, made with today's price shortly before the close.
     closes/highs/lows: previous sessions' daily values (oldest first). state: dict of active rules
-    {"IBS": days_held, "RSI2": days_held, "D7": days_held}. Returns the new state; hold = bool(new state)."""
+    {"IBS": days_held, "RSI2": days_held}. Returns the new state; hold = bool(new state).
+    Double 7s was dropped on 2026-11-21: it failed the unseen US500 2018-2022 check (an old "D7" entry still exits)."""
     st = dict(state)
     x = np.r_[np.asarray(closes[-300:], float), price]
     # exits first (checked with today's price)
@@ -107,5 +108,4 @@ def b3_step(state, closes, highs, lows, price, hi_today, lo_today):
         st["IBS"] = 0
     if len(x) >= 200 and x[-1] > x[-200:].mean():
         if "RSI2" not in st and rsi2(x[-60:]) < 10: st["RSI2"] = 0
-        if "D7" not in st and x[-1] <= x[-7:].min(): st["D7"] = 0
     return st
