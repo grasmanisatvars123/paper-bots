@@ -23,6 +23,13 @@ buying power at 15:46, bot 3 buys what fits at the close and the rest at 15:58:4
 Williams keys (Desktop script "Bots 3 Williams konta.bat"). Bots 1 and 2 stay without keys, so they do nothing; their
 tests showed no edge.
 
+**Since 2026-11-22 (the user's choice): "Bot 3 SSO"** (workflow `bot3_sso.yml`) runs the same bot 3 rules in its
+OWN paper account (about 40,000 USD), holding **SSO** (ProShares Ultra S&P500, 2x the daily move) instead of VOO.
+State and journal: `state/bot3sso/`, "Bots 3 SSO" journal pages. Secrets `BOT3SSO_ALPACA_…` (Desktop script
+"Bots 3 SSO konts.bat", which checks the account before saving). Backtest note: Trading Vault
+`03 Strategies/Strategy Lab/2026-11-22 Bot 3 on SSO.md` (about 2x the profit and 2x the falls of bot 3; it failed
+the pre-registered drawdown check, the user chose to paper-trade it anyway).
+
 Original setup: create three Alpaca paper accounts, then add the secrets `BOT1_ALPACA_API_KEY`, `BOT1_ALPACA_SECRET_KEY`,
 `BOT2_…`, `BOT3_…` (Settings → Secrets and variables → Actions).
 

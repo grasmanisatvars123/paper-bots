@@ -1,0 +1,98 @@
+# Bot 3 with SSO (2x S&P 500 fund) on its OWN Alpaca PAPER account (no real money; the user's choice 2026-11-22). Public repository so GitHub Actions minutes are free.
+# Keys: repository secrets BOT3SSO_ALPACA_API_KEY and BOT3SSO_ALPACA_SECRET_KEY (Desktop script "Bots 3 SSO konts.bat").
+# Without those secrets every run stops at once and does nothing.
+# Start times (UTC, US winter time; from 14 March 2027 move every cron one hour earlier):
+#   19:00, 19:30, 20:00, 20:20 (= 14:00-15:20 New York): decide at 15:46 and send a market-on-close order by 15:50
+# GitHub often starts scheduled runs 45-75 minutes late, hence the early and repeated starts; "auto" does whatever is
+# due and skips what is already done.
+name: Bot 3 SSO
+
+on:
+  schedule:
+    - cron: "0 19 * * 1-5"
+    - cron: "30 19 * * 1-5"
+    - cron: "0 20 * * 1-5"
+    - cron: "20 20 * * 1-5"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: bot3sso
+  cancel-in-progress: false
+
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    timeout-minutes: 350
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+
+      - name: Are the keys there?
+        id: pre
+        env:
+          KEY: ${{ secrets.BOT3SSO_ALPACA_API_KEY }}
+        run: |
+          if [ -z "$KEY" ]; then echo "mode=none" >> "$GITHUB_OUTPUT"; echo "No keys yet: nothing to do."; else echo "mode=auto" >> "$GITHUB_OUTPUT"; fi
+
+      - uses: actions/setup-python@v5
+        if: steps.pre.outputs.mode == 'auto'
+        with:
+          python-version: "3.13"
+
+      - name: Install packages
+        if: steps.pre.outputs.mode == 'auto'
+        run: pip install numpy pandas truststore tzdata
+
+      - name: Run the bot
+        if: steps.pre.outputs.mode == 'auto'
+        working-directory: bots
+        env:
+          ALPACA_API_KEY: ${{ secrets.BOT3SSO_ALPACA_API_KEY }}
+          ALPACA_SECRET_KEY: ${{ secrets.BOT3SSO_ALPACA_SECRET_KEY }}
+          ALPACA_BASE_URL: https://paper-api.alpaca.markets
+          BOT3_SYMBOL: SSO
+          BOT3_ID: bot3sso
+          BOT3_SHARED: "0"
+          MSG_FILE: ${{ runner.temp }}/msg.txt
+        run: python bot3_daily.py
+
+      - name: Queue the messages for the phone
+        if: always() && steps.pre.outputs.mode == 'auto'
+        env:
+          JOB_STATUS: ${{ job.status }}
+          MSG_FILE: ${{ runner.temp }}/msg.txt
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          RUN_ID: ${{ github.run_id }}
+        run: |
+          python - <<'EOF'
+          import datetime, os
+          lines = []
+          if os.path.exists(os.environ["MSG_FILE"]):
+              lines = [x for x in open(os.environ["MSG_FILE"], encoding="utf-8").read().splitlines() if x.strip()]
+          if os.environ["JOB_STATUS"] != "success":
+              lines.append("Bots 3 ar SSO: šodien radās tehniska kļūda, bots varēja neizpildīt savu darbu. "
+                           "Tev nekas nav jādara, pasaki Claude, lai paskatās. " + os.environ["RUN_URL"])
+          stamp = datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H%M%S")
+          os.makedirs("outbox", exist_ok=True)
+          for n, text in enumerate(lines):
+              open(f"outbox/{stamp}-{os.environ['RUN_ID']}-bot3sso-{n}.txt", "w", encoding="utf-8").write(text)
+          EOF
+
+      - name: Save journal, state and messages
+        if: always() && steps.pre.outputs.mode == 'auto'
+        run: |
+          git config user.name "paper-bots"
+          git config user.email "paper-bots@users.noreply.github.com"
+          git add journal state outbox || true
+          git diff --cached --quiet && exit 0
+          git commit -m "Bot 3 SSO: $(date -u +%F)"
+          for i in 1 2 3; do
+            if ! git pull --rebase; then git rebase --abort; git pull --rebase -X theirs || { git rebase --abort; sleep 5; continue; }; fi
+            git push && exit 0
+            sleep 5
+          done
+          exit 1
