@@ -1,0 +1,17 @@
+{
+ "day": "2026-11-23",
+ "notes": [
+  "15:46 S\u0101kuma st\u0101voklis apr\u0113\u0137in\u0101ts no p\u0113d\u0113jo dienu v\u0113stures.",
+  "15:46 Cena 724.46; akt\u012bvi: neviens; paliek bez poz\u012bcijas."
+ ],
+ "trade": null,
+ "done": true,
+ "price": 724.46,
+ "rules_before": {
+  "IBS": 4,
+  "RSI2": 4
+ },
+ "rules_after": {},
+ "equity": 40000.0,
+ "action": "paliek bez poz\u012bcijas"
+}
