@@ -3,12 +3,17 @@
 # Without those secrets every run stops at once and does nothing.
 # Start times (UTC, US winter time; from 14 March 2027 move every cron one hour earlier):
 #   19:00, 19:30, 20:00, 20:20 (= 14:00-15:20 New York): decide at 15:46 and send a market-on-close order by 15:50
+#   15:30, 16:00, 16:30 (= 10:30-11:30 New York): only for half days (close 13:00, decide 12:46); on a normal day
+#   these runs see the decision is more than 150 minutes away and stop at once.
 # GitHub often starts scheduled runs 45-75 minutes late, hence the early and repeated starts; "auto" does whatever is
 # due and skips what is already done.
 name: Bot 3 daily mean reversion
 
 on:
   schedule:
+    - cron: "30 15 * * 1-5"
+    - cron: "0 16 * * 1-5"
+    - cron: "30 16 * * 1-5"
     - cron: "0 19 * * 1-5"
     - cron: "30 19 * * 1-5"
     - cron: "0 20 * * 1-5"

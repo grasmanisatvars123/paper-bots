@@ -9,7 +9,7 @@ State (which rules are active) is kept in state/bot3/rules.json; missed days are
 Since 2026-11-21 the bot runs in the SAME paper account as the Williams bot (the user's choice). Williams trades SPY
 and touches only SPY, so this bot trades VOO (a Vanguard S&P 500 fund that moves like SPY; signals still come from
 SPY data). If Williams still holds SPY at 15:46 and uses the buying power, the bot buys what fits at the close and
-the rest with a market order at 15:58:40, after Williams has closed.
+the rest with a market order at 15:58:40 (close - 80 s on half days), after Williams has closed.
 
 Since 2026-11-22 a second copy runs in its OWN paper account (the user's choice, workflow bot3_sso.yml): same rules,
 but it holds SSO (ProShares Ultra S&P500, 2x the daily move of the S&P 500). Environment: BOT3_SYMBOL=SSO,
@@ -74,6 +74,8 @@ def auto(api):
         print(day, "jau pabeigts"); return
     close = cm.at(day, sess[1])
     decide = close - pd.Timedelta(minutes=14)                     # 15:46 on a normal day
+    if decide - cm.now() > pd.Timedelta(minutes=150):            # early half-day starts (16:00 UTC) on a normal day
+        print(day, f"par agru: lēmums {decide:%H:%M}, šis palaidiens beidzas"); return
     if cm.now() > close - pd.Timedelta(minutes=11):
         cm.note(s, "Palaišana nokavēja slēguma rīkojumu termiņu (GitHub kavējās). Šodien nekas nemainās.")
         s["done"] = True; cm.save(BOT, s, (TITLE, journal)); return
@@ -112,9 +114,10 @@ def auto(api):
                        f"slēgumā (~{cm.usd(want * tp)}), jo cena nokritās ({', '.join(LABELS[k] for k in new)}). "
                        f"Tas turēs, līdz cena atgūsies (parasti 2–7 dienas).")
             if want > now_qty:
-                cm.note(s, f"{'Williams vēl izmantoja pirktspēju' if SHARED else 'Nepietika pirktspējas'}: slēgumā {now_qty}, atlikušās {want - now_qty} pērk 15:58:40.")
+                rest_t = close - pd.Timedelta(seconds=80)            # 15:58:40, after Williams closes at close - 2 min
+                cm.note(s, f"{'Williams vēl izmantoja pirktspēju' if SHARED else 'Nepietika pirktspējas'}: slēgumā {now_qty}, atlikušās {want - now_qty} pērk {rest_t:%H:%M:%S}.")
                 cm.save(BOT, s, (TITLE, journal))
-                cm.sleep_until(cm.at(day, "15:58") + pd.Timedelta(seconds=40))
+                cm.sleep_until(rest_t)
                 try:
                     o2 = api.market_order(TRADE, "buy", want - now_qty, f"{OID}-{day}-rest")
                     s["rest_order_id"] = o2["id"]

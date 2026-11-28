@@ -19,7 +19,9 @@ functions. `bots/test_live.py` runs all three bots against a fake broker on past
 **Since 2026-11-21 (the user's choice): only bot 3 is in use, and it runs in the same paper account as the
 Williams bot** (github.com/grasmanisatvars123/williams-paper-bot). Williams trades SPY and touches only SPY, so bot 3
 trades **VOO** (an S&P 500 fund that moves like SPY; the signals still come from SPY data). If Williams still uses the
-buying power at 15:46, bot 3 buys what fits at the close and the rest at 15:58:40. Its secrets `BOT3_…` are the
+buying power at 15:46, bot 3 buys what fits at the close and the rest at 15:58:40. On half days (close 13:00) both bot 3 workflows decide
+at 12:46 instead: extra starts at 15:30, 16:00 and 16:30 UTC catch those days and stop at once on normal days
+(added 2026-11-28 after bot 3 missed the 2026-11-27 half day). Its secrets `BOT3_…` are the
 Williams keys (Desktop script "Bots 3 Williams konta.bat"). Bots 1 and 2 stay without keys, so they do nothing; their
 tests showed no edge.
 
